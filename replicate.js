@@ -220,10 +220,8 @@ function replicate(repId, src, target, opts, returnValue, result) {
     });
   }
 
-
-  function getNextDoc() {
+function processDiffDoc(id) {
     var diffs = currentBatch.diffs;
-    var id = Object.keys(diffs)[0];
     var allMissing = diffs[id].missing;
     // avoid url too long error by batching
     var missingBatches = [];
@@ -254,9 +252,8 @@ function replicate(repId, src, target, opts, returnValue, result) {
    * Fetch all the docs in currentBatch at once.
    * Should only be called if src.getBulk exists.
    */
-  function getAllDocsBulk() {
+  function getAllDocsBulk(diffs) {
     var parameters = [],
-        diffs = currentBatch.diffs,
         ids = Object.keys(diffs),
         id,
         allMissing,
@@ -285,37 +282,34 @@ function replicate(repId, src, target, opts, returnValue, result) {
     }
 
     return src.getBulk(parameters).then(function (docIds) {
-        // Would it be better to callback one doc at a time?
-        docIds.forEach(function(docs) {
-          docs.forEach(function (doc) {
-            if (returnValue.cancelled) {
-              return completeReplication();
-            }
-            if (doc.ok) {
-              result.docs_read++;
-              currentBatch.pendingRevs++;
-              currentBatch.docs.push(doc.ok);
-              delete diffs[doc.ok._id];
-            }
-          });
+      // Would it be better to callback one doc at a time?
+      docIds.forEach(function(docs) {
+        docs.forEach(function (doc) {
+          if (returnValue.cancelled) {
+            return completeReplication();
+          }
+          if (doc.ok) {
+            result.docs_read++;
+            currentBatch.pendingRevs++;
+            currentBatch.docs.push(doc.ok);
+            delete currentBatch.diffs[doc.ok._id];
+          }
         });
       });
+    });
   }
   
 
   var bulkFailed = false;
   function getAllDocs() {
-    if (Object.keys(currentBatch.diffs).length > 0) {
-      if(src.getBulk && !bulkFailed) {
-        return getAllDocsBulk().catch(function(e) {
+    var diffKeys = Object.keys(currentBatch.diffs);
+    if (diffKeys.length && src.getBulk && !bulkFailed) {
+        return getAllDocsBulk(diffKeys).catch(function(e) {
           bulkFailed = true;
           return getAllDocs();
         });
-      } else {
-        return getNextDoc().then(getAllDocs);
-      }
     } else {
-      return utils.Promise.resolve();
+      return utils.Promise.all(diffKeys.map(processDiffDoc));
     }
   }
 
@@ -327,6 +321,9 @@ function replicate(repId, src, target, opts, returnValue, result) {
       var missing = currentBatch.diffs[id].missing;
       return missing.length === 1 && missing[0].slice(0, 2) === '1-';
     });
+    if (!ids.length) { // nothing to fetch
+      return utils.Promise.resolve();
+    }
     return src.allDocs({
       keys: ids,
       include_docs: true
