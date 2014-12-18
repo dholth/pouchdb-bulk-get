@@ -252,10 +252,10 @@ function processDiffDoc(id) {
    * Fetch all the docs in currentBatch at once.
    * Should only be called if src.getBulk exists.
    */
-  function getAllDocsBulk(diffs) {
+  function getAllDocsBulk(ids) {
     var parameters = [],
-        ids = Object.keys(diffs),
         id,
+        diffs = currentBatch.diffs,
         allMissing,
         missingBatches,
         missingBatch;
