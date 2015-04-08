@@ -1,6 +1,8 @@
---- ../pouchdb/lib/replicate.js	2014-11-13 16:23:21.507090534 -0500
-+++ replicate.js	2014-11-13 16:44:42.274301983 -0500
-@@ -1,8 +1,19 @@
+diff --git a/../pouchdb/lib/replicate.js b/replicate.js
+index 109f199..f074a89 100644
+--- a/../pouchdb/lib/replicate.js
++++ b/replicate.js
+@@ -1,9 +1,19 @@
 +/**
 + * replicate.js modded to use _bulk_get
 + */
@@ -12,7 +14,7 @@
 +var utils = require('../pouchdb/lib/utils');
  var EE = require('events').EventEmitter;
 -var Checkpointer = require('./checkpointer');
-+
+ 
 +utils.clone = function (obj) {
 +  return extend(true, {}, obj);
 +};
@@ -20,9 +22,9 @@
 +var EE = require('events').EventEmitter;
 +var Checkpointer = require('../pouchdb/lib/checkpointer');
  var MAX_SIMULTANEOUS_REVS = 50;
+ var RETRY_DEFAULT = false;
  
- function randomNumber(min, max) {
-@@ -239,9 +250,66 @@
+@@ -245,12 +255,70 @@ function replicate(repId, src, target, opts, returnValue, result) {
      }));
    }
  
@@ -30,11 +32,10 @@
 +   * Fetch all the docs in currentBatch at once.
 +   * Should only be called if src.getBulk exists.
 +   */
-+  function getAllDocsBulk() {
++  function getAllDocsBulk(ids) {
 +    var parameters = [],
-+        diffs = currentBatch.diffs,
-+        ids = Object.keys(diffs),
 +        id,
++        diffs = currentBatch.diffs,
 +        allMissing,
 +        missingBatches,
 +        missingBatch;
@@ -61,32 +62,38 @@
 +    }
 +
 +    return src.getBulk(parameters).then(function (docIds) {
-+        // Would it be better to callback one doc at a time?
-+        docIds.forEach(function(docs) {
-+          docs.forEach(function (doc) {
-+            if (returnValue.cancelled) {
-+              return completeReplication();
-+            }
-+            if (doc.ok) {
-+              result.docs_read++;
-+              currentBatch.pendingRevs++;
-+              currentBatch.docs.push(doc.ok);
-+              delete diffs[doc.ok._id];
-+            }
-+          });
++      // Would it be better to callback one doc at a time?
++      docIds.forEach(function(docs) {
++        docs.forEach(function (doc) {
++          if (returnValue.cancelled) {
++            return completeReplication();
++          }
++          if (doc.ok) {
++            result.docs_read++;
++            currentBatch.pendingRevs++;
++            currentBatch.docs.push(doc.ok);
++            delete currentBatch.diffs[doc.ok._id];
++          }
 +        });
 +      });
++    });
 +  }
-+  
 +
++  var bulkFailed = false;
    function getAllDocs() {
-     if (Object.keys(currentBatch.diffs).length > 0) {
--      return getNextDoc().then(getAllDocs);
-+      if(src.getBulk) {
-+        return getAllDocsBulk();
-+      } else {
-+        return getNextDoc().then(getAllDocs);
-+      }
-     } else {
-       return utils.Promise.resolve();
-     }
+     var diffKeys = Object.keys(currentBatch.diffs);
+-    return utils.Promise.all(diffKeys.map(processDiffDoc));
++    if (diffKeys.length && src.getBulk && !bulkFailed) {
++        return getAllDocsBulk(diffKeys).catch(function(e) {
++          bulkFailed = true;
++          return getAllDocs();
++        });
++    } else {
++      return utils.Promise.all(diffKeys.map(processDiffDoc));
++    }
+   }
+ 
+-
+   function getRevisionOneDocs() {
+     // filter out the generation 1 docs and get them
+     // leaving the non-generation one docs to be got otherwise
