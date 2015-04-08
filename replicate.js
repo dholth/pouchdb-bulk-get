@@ -107,12 +107,6 @@ Replication.prototype.cancel = function () {
 
 Replication.prototype.ready = function (src, target) {
   var self = this;
-  this.once('change', function () {
-    if (this.state === 'pending' || this.state === 'stopped') {
-      self.state = 'active';
-      self.emit('active');
-    }
-  });
   function onDestroy() {
     self.cancel();
   }
@@ -387,6 +381,10 @@ function replicate(repId, src, target, opts, returnValue, result) {
   function getDiffs() {
     var diff = {};
     currentBatch.changes.forEach(function (change) {
+      // Couchbase Sync Gateway emits these, but we can ignore them
+      if (change.id === "_user/") {
+        return;
+      }
       diff[change.id] = change.changes.map(function (x) {
         return x.rev;
       });
@@ -426,6 +424,7 @@ function replicate(repId, src, target, opts, returnValue, result) {
     if (pendingBatch.changes.length === 0) {
       if (batches.length === 0 && !currentBatch) {
         if ((continuous && changesOpts.live) || changesCompleted) {
+          returnValue.state = 'pending';
           returnValue.emit('paused');
           returnValue.emit('uptodate', result);
         }
@@ -446,6 +445,10 @@ function replicate(repId, src, target, opts, returnValue, result) {
         changes: [],
         docs: []
       };
+      if (returnValue.state === 'pending' || returnValue.state === 'stopped') {
+        returnValue.state = 'active';
+        returnValue.emit('active');
+      }
       startNextBatch();
     }
   }
@@ -593,11 +596,18 @@ function replicate(repId, src, target, opts, returnValue, result) {
         returnDocs: true // required so we know when we're done
       };
       if (opts.filter) {
-        // required for the client-side filter in onChange
-        changesOpts.include_docs = true;
+        if (typeof opts.filter !== 'string') {
+          // required for the client-side filter in onChange
+          changesOpts.include_docs = true;
+        } else { // ddoc filter
+          changesOpts.filter = opts.filter;
+        }
       }
       if (opts.query_params) {
         changesOpts.query_params = opts.query_params;
+      }
+      if (opts.view) {
+        changesOpts.view = opts.view;
       }
       getChanges();
     }).catch(function (err) {
@@ -605,6 +615,10 @@ function replicate(repId, src, target, opts, returnValue, result) {
     });
   }
 
+  if (returnValue.cancelled) { // cancelled immediately
+    completeReplication();
+    return;
+  }
 
   returnValue.once('cancel', completeReplication);
 
@@ -643,7 +657,7 @@ exports.toPouch = toPouch;
 function toPouch(db, opts) {
   var PouchConstructor = opts.PouchConstructor;
   if (typeof db === 'string') {
-    return new PouchConstructor(db);
+    return new PouchConstructor(db, opts);
   } else if (db.then) {
     return db;
   } else {

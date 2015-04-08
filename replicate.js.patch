@@ -1,7 +1,7 @@
-diff --git a/lib/replicate.js b/lib/replicate.js
-index 8b3fad6..223ec1f 100644
---- a/lib/replicate.js
-+++ b/lib/replicate.js
+diff --git a/../pouchdb/lib/replicate.js b/replicate.js
+index 109f199..f074a89 100644
+--- a/../pouchdb/lib/replicate.js
++++ b/replicate.js
 @@ -1,9 +1,19 @@
 +/**
 + * replicate.js modded to use _bulk_get
@@ -24,7 +24,7 @@ index 8b3fad6..223ec1f 100644
  var MAX_SIMULTANEOUS_REVS = 50;
  var RETRY_DEFAULT = false;
  
-@@ -251,12 +261,70 @@ function replicate(repId, src, target, opts, returnValue, result) {
+@@ -245,12 +255,70 @@ function replicate(repId, src, target, opts, returnValue, result) {
      }));
    }
  
